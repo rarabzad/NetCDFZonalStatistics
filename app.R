@@ -9,6 +9,10 @@ library(ncdf4)
 library(plotly)
 library(reshape2)
 library(ggplot2)
+library(geosphere)
+library(sp)
+library(lwgeom)
+library(rmapshaper)
 
 label_with_help <- function(id, label_text, help_text) {
   tags$label(
