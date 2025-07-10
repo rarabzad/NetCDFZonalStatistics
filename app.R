@@ -33,9 +33,35 @@ label_with_help <- function(id, label_text, help_text) {
 
 options(shiny.maxRequestSize = 500 * 1024^2)  # 100 MB max upload size
 
-
 ui <- fluidPage(
   useShinyjs(),
+  # JavaScript for inactivity timer
+  tags$script(HTML("
+    var activityTimeout;
+    var aggregationInProgress = false;
+    
+    function resetActivityTimer() {
+      if (!aggregationInProgress) {
+        clearTimeout(activityTimeout);
+        activityTimeout = setTimeout(function() {
+          Shiny.setInputValue('inactive', true, {priority: 'event'});
+        }, 60000); // 1 minute = 60000 ms
+      }
+    }
+    
+    $(document).on('click keypress mousemove scroll', resetActivityTimer);
+    resetActivityTimer();
+    
+    Shiny.addCustomMessageHandler('aggregationStatus', function(status) {
+      aggregationInProgress = status;
+      if (status) {
+        clearTimeout(activityTimeout);
+      } else {
+        resetActivityTimer();
+      }
+    });
+  ")),
+  
   tags$head(
     tags$script(HTML("
       $(function () {
@@ -69,10 +95,8 @@ ui <- fluidPage(
       actionButton("runButton", "Run Aggregation", icon = icon("play"), class = "btn-primary"),
       br(),br(),
       uiOutput("download_ui")
-
     ),
     mainPanel(
-      h4("Log"),
       verbatimTextOutput("logText"),
       br(),
       uiOutput("dynamicTabs")
@@ -86,6 +110,25 @@ server <- function(input, output, session) {
   shp_path <- reactiveVal(NULL)
   aggregated_csv_path <- reactiveVal(NULL)
   
+  # Track aggregation status for inactivity timer
+  aggregation_active <- reactiveVal(FALSE)
+  
+  # Handle inactivity
+  observeEvent(input$inactive, {
+    if (input$inactive && !aggregation_active()) {
+      append_log("Session closed due to inactivity")
+      session$close()
+    }
+  })
+  
+  # Update JavaScript with aggregation status
+  observe({
+    if (aggregation_active()) {
+      session$sendCustomMessage("aggregationStatus", TRUE)
+    } else {
+      session$sendCustomMessage("aggregationStatus", FALSE)
+    }
+  })
   
   log_messages <- reactiveVal(character())
   output$download_ui <- renderUI({
@@ -100,6 +143,7 @@ server <- function(input, output, session) {
       )
     )
   })
+  
   append_log <- function(msg) {
     time_str <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
     new_msg <- paste0("[", time_str, "] ", msg)
@@ -136,8 +180,7 @@ server <- function(input, output, session) {
         has_spatial && !has_time
       })]
       
-      # update selectInput choices, select first 2 as default (or all if < 2)
-      updateSelectInput(session, "varnames", choices = spatial_vars, selected = head(spatial_vars, 2))
+      updateSelectInput(session, "varnames", choices = spatial_vars, selected = NULL)
       updateSelectInput(session, "dimnames", choices = names(dims), selected = head(names(dims), 2))
       
       append_log(paste("Spatial-only variables detected:", paste(spatial_vars, collapse = ", ")))
@@ -170,22 +213,19 @@ server <- function(input, output, session) {
     shp_dir(tempdir)
     shp_path(shp_files[1])
     
-    # Read shapefile now
     shp <- sf::st_read(shp_files[1], quiet = TRUE)
-    shp_data(shp)  # update reactive value
+    shp_data(shp)
     
-    # Show UI inputs
     shinyjs::show("shapefileInputs")
     
-    # Log info
     append_log(paste("Shapefile uploaded and unpacked:", basename(shp_files[1])))
     append_log(paste("Number of polygon features:", nrow(shp)))
     
-    # Update HRU_ID dropdown with shapefile fields
     updateSelectInput(session, "HRU_ID", choices = names(shp), selected = names(shp)[1])
   })
   
   aggregated_result <- eventReactive(input$runButton, {
+    aggregation_active(TRUE)
     append_log("Starting aggregation...")
     req(input$ncFile)
     ncFile_path    <- input$ncFile$datapath
@@ -210,7 +250,6 @@ server <- function(input, output, session) {
     out <- tryCatch({
       append_log("Running rdrs_spatial_aggregator...")
       
-      # Wrap the heavy call in withProgress
       res <- withProgress(message = "Aggregating NetCDF...", value = 0, {
         incProgress(0.1, detail = "Initializing...")
         r <- rdrs_spatial_aggregator(
@@ -225,7 +264,6 @@ server <- function(input, output, session) {
         r
       })
       
-      # now that res exists, set CSV path
       csv_out_path <- file.path(
         dirname(ncFile_path),
         paste0(tools::file_path_sans_ext(basename(input$ncFile$name)), "_aggregated.csv")
@@ -235,16 +273,17 @@ server <- function(input, output, session) {
       append_log("Aggregation done.")
       append_log(paste("Aggregated file path:", csv_out_path))
       
-      res  # return from tryCatch
+      res
     }, error = function(e) {
       append_log(paste("Error:", e$message))
       NULL
     })
     
-    out  # eventReactive returns this
+    aggregation_active(FALSE)
+    out
   }, ignoreNULL = FALSE)
-
-    output$dynamicTabs <- renderUI({
+  
+  output$dynamicTabs <- renderUI({
     req(aggregated_result())
     res        <- aggregated_result()
     dims       <- lapply(res, dim)
@@ -253,7 +292,6 @@ server <- function(input, output, session) {
     
     tabs <- list()
     
-    # one tab per time-series variable
     for (v in time_vars) {
       tabs[[v]] <- tabPanel(
         title = v,
@@ -261,7 +299,6 @@ server <- function(input, output, session) {
       )
     }
     
-    # one tab *per* static variable, named after that variable
     for (v in static_vars) {
       tabs[[v]] <- tabPanel(
         title = v,
@@ -269,13 +306,10 @@ server <- function(input, output, session) {
       )
     }
     
-    # build the unnamed argument list
     args <- c(list(id = "resultTabs"), unname(tabs))
     do.call(tabsetPanel, args)
   })
   
-  # For time‑series variables: create a plotly line for each HRU
-  # Percentile ribbon + median line for each time-series variable
   observe({
     req(aggregated_result())
     res   <- aggregated_result()
@@ -286,10 +320,9 @@ server <- function(input, output, session) {
       local({
         varname <- v
         output[[paste0("plot_", varname)]] <- renderPlotly({
-          mat   <- res[[varname]]        # time × HRU
+          mat   <- res[[varname]]
           times <- as.POSIXct(rownames(mat), tz="UTC")
           
-          # compute 2.5%, 50%, 97.5% percentiles across HRUs
           q025  <- apply(mat, 1, quantile, probs = 0.025, na.rm=TRUE)
           med   <- apply(mat, 1, median,       na.rm=TRUE)
           q975  <- apply(mat, 1, quantile, probs = 0.975, na.rm=TRUE)
@@ -311,7 +344,7 @@ server <- function(input, output, session) {
       })
     }
   })
-  # For static variables: render as a simple DT table
+  
   observe({
     req(aggregated_result())
     res       <- aggregated_result()
@@ -322,7 +355,7 @@ server <- function(input, output, session) {
       local({
         varname <- v
         output[[paste0("static_", varname)]] <- renderDT({
-          vals <- round(as.numeric(res[[varname]][1, ]),2)      # length = nHRU
+          vals <- round(as.numeric(res[[varname]][1, ]),2)
           df   <- data.frame(HRU = seq_along(vals), 
                              Value = vals)
           datatable(df, 
@@ -332,7 +365,6 @@ server <- function(input, output, session) {
       })
     }
   })
-  
   
   output$downloadCSV <- downloadHandler(
     filename = function() {
@@ -355,7 +387,6 @@ server <- function(input, output, session) {
       })
     }
   )
-  
   
   output$tableAggregated <- renderDT({
     res <- aggregated_result()
