@@ -32,38 +32,45 @@ rdrs_spatial_aggregator<-function(ncFile,
   if(is.null(weightsFile)  & is.null(hrufile)) warning("either grid cells weight file or HRUs shapefile must be provided! otherwise grid cells will be assigned with equal weights.")
   if(!file.exists(ncFile)) stop("provided nc file doesn't exist!")
   if(!grepl("\\.nc$", tolower(ncFile))) stop("for 'ncFile' wrong file format specified. Only '.nc' is accepted!")
-  if(!is.null(weightsFile))
-  {
-    if(!file.exists(weightsFile)) stop("provided weight file doesn't exist!")
-    if(!grepl("\\.txt$", tolower(weightsFile))) stop("for 'weightsFile' wrong file format specified. Only '.txt' is accepted!")
-  } else if (!is.null(hrufile) & is.null(weightsFile)){
-    if(is.null(hrufile)) stop("HRUs shape file must be provided when grid cells weight file is missing!")
-    if(is.null(varnames) & is.null(dimnames)) stop("When the grid cell weight file is missing, you must provide either the variable names, the dimensions, or both!")
-    if(is.null(HRU_ID)) stop("When the grid cell weight file is missing, you must provide HRU_ID!")
+  if (!is.null(weightsFile)) {
+    if (!is.null(hrufile)) {
+      warning("'weightsFile' is provided and will be used. 'hrufile' will be ignored.")
+    }
+    if (!file.exists(weightsFile)) stop("Provided weight file does not exist!")
+    if (!grepl("\\.txt$", tolower(weightsFile))) stop("Only '.txt' file is accepted for 'weightsFile'!")
+    weights_lines <- readLines(weightsFile, warn = FALSE)
+    weights_lines <- weights_lines[!grepl("^\\s*[#:]", weights_lines)]  # Remove comment lines
+    weights <- read.table(text = weights_lines, header = FALSE)
+    colnames(weights) <- c("spatial_unit", "Cell_ID", "weight")
+  } else if (!is.null(hrufile)) {
+    if (is.null(varnames) && is.null(dimnames)) {
+      stop("When the grid cell weight file is missing, you must provide either the variable names, the dimensions, or both!")
+    }
+    if (is.null(HRU_ID)) {
+      stop("When the grid cell weight file is missing, you must provide HRU_ID!")
+    }
     source("https://raw.githubusercontent.com/rarabzad/GridWeightsGenerator/refs/heads/main/grids_weights_generator.R")
-    weights_txt<-
-    grids_weights_generator(ncfile=ncFile,
-                            hrufile=hrufile,
-                            varnames=varnames,
-                            dimnames=dimnames,
-                            HRU_ID=HRU_ID,
-                            plot= FALSE)$weights_txt
-    data_lines <- weights_txt[!grepl("^[:#]", weights_txt)]
-    weights    <- read.table(text = data_lines, sep = "\t", header = FALSE,
-                         col.names = c("spatial_unit","Cell_#","weight"))
-    colnames(weights)<-c("spatial_unit","Cell_#","weight")
-  } else if (is.null(hrufile) & !is.null(weightsFile)){
-    weights<-readLines(weightsFile,warn = F)
-    weights<-weights[-grep("^\\s*#", weights)]
-    weights<-weights[-grep("^\\s*:", weights)]
-    weights<-read.table(text = weights, header = F)
-    colnames(weights)<-c("spatial_unit","Cell_#","weight")
-  }else if (is.null(hrufile) & is.null(weightsFile)){
-    spatial_unit<-gsub(".nc","",basename(ncFile))
-    Cell_id<-which(!is.na(ncvar_get(nc,names(nc$var)[sapply(nc$var, function(v) length(v$dim) >= 3)][1])[,,1]))-1
-    weight<-1/length(Cell_id)
-    weights<-data.frame(spatial_unit,Cell_id,weight)
-    colnames(weights)<-c("spatial_unit","Cell_#","weight")
+    weights_txt <- grids_weights_generator(
+      ncfile = ncFile,
+      hrufile = hrufile,
+      varnames = varnames,
+      dimnames = dimnames,
+      HRU_ID = HRU_ID,
+      plot = FALSE
+    )$weights_txt
+    data_lines <- weights_txt[!grepl("^\\s*[#:]", weights_txt)]
+    weights <- read.table(text = data_lines, sep = "\t", header = FALSE,
+                          col.names = c("spatial_unit", "Cell_ID", "weight"))
+  } else {
+    spatial_unit <- gsub("\\.nc$", "", basename(ncFile))
+    var3d_name <- names(nc$var)[sapply(nc$var, function(v) length(v$dim) >= 3)][1]
+    var3d_data <- ncvar_get(nc, var3d_name)[,,1]
+    Cell_ID <- which(!is.na(var3d_data)) - 1
+    weight <- 1 / length(Cell_ID)
+    weights <- data.frame(spatial_unit = spatial_unit,
+                          Cell_ID = Cell_ID,
+                          weight = weight)
+    colnames(weights) <- c("spatial_unit", "Cell_ID", "weight")
   }
   OutFile<-file.path(dirname(ncFile),gsub(".nc","_aggregated.csv",basename(ncFile)))
   nc<-nc_open(ncFile)
@@ -72,23 +79,23 @@ rdrs_spatial_aggregator<-function(ncFile,
   vars <- vars[sapply(nc$var[vars], function(v) all(space_dims %in% sapply(v$dim, `[[`, "name")))]
   spatial_unit<-unique(weights$spatial_unit)
   time_dim <- nc$dim[
-  sapply(nc$dim, function(d) {
-    !is.null(d$units) && grepl("since", d$units, ignore.case = TRUE)
-  })][[1]]
+    sapply(nc$dim, function(d) {
+      !is.null(d$units) && grepl("since", d$units, ignore.case = TRUE)
+    })][[1]]
   time_vals  <- time_dim$vals - 1
   time_units <- time_dim$units
   origin_str <- sub(".*since ", "", time_units)
   time_step<-unit_str   <- tolower(trimws(strsplit(time_units, " since ")[[1]][1]))
   date_time<-origin     <- as.POSIXct(origin_str, tz = "UTC")
   sequence_of_times <- switch(unit_str,
-  "seconds" = origin + seconds(time_vals),
-  "minutes" = origin + minutes(time_vals),
-  "hours"   = origin + hours(time_vals),
-  "days"    = origin + days(time_vals),
-  "weeks"   = origin + weeks(time_vals),
-  "months"  = origin %m+% months(time_vals),
-  "years"   = origin %m+% years(time_vals),
-  stop(paste("Unsupported time unit:", unit_str)))
+                              "seconds" = origin + seconds(time_vals),
+                              "minutes" = origin + minutes(time_vals),
+                              "hours"   = origin + hours(time_vals),
+                              "days"    = origin + days(time_vals),
+                              "weeks"   = origin + weeks(time_vals),
+                              "months"  = origin %m+% months(time_vals),
+                              "years"   = origin %m+% years(time_vals),
+                              stop(paste("Unsupported time unit:", unit_str)))
   aggregated_data<-list()
   for(j in 1:length(vars))
   {
@@ -104,11 +111,11 @@ rdrs_spatial_aggregator<-function(ncFile,
       W<-array(W, dim = c(dim(W), ifelse(length(dim(var_data))>2,dim(var_data)[3],1)))
       if(dim(W)[3]==1) W<-W[,,1]
       mat[,i]<-
-      if(length(dim(W))==2){
-        sum(W*var_data,na.rm=T)
-      }else{
-        apply(W*var_data,3,sum,na.rm=T)
-      } 
+        if(length(dim(W))==2){
+          sum(W*var_data,na.rm=T)
+        }else{
+          apply(W*var_data,3,sum,na.rm=T)
+        } 
     }
     mat<-as.data.frame(mat)
     rownames(mat)<-if (length(nc$var[[vars[j]]]$dim) > 2) as.character(sequence_of_times) else NULL
