@@ -242,8 +242,8 @@ server <- function(input, output, session) {
     }
     
     if (!exists("rdrs_spatial_aggregator")) {
-      append_log("Loading rdrs_spatial_aggregator function...")
-      source("https://raw.githubusercontent.com/rarabzad/RDRS/refs/heads/main/scripts/rdrs_spatial_aggregator.R")
+      append_log("Loading spatial_aggregator function...")
+      source("https://raw.githubusercontent.com/rarabzad/NetCDFZonalStatistics/refs/heads/main/spatial_aggregator.R")
       append_log("Function loaded.")
     }
     
@@ -252,7 +252,7 @@ server <- function(input, output, session) {
       
       res <- withProgress(message = "Aggregating NetCDF...", value = 0, {
         incProgress(0.1, detail = "Initializing...")
-        r <- rdrs_spatial_aggregator(
+        r <- spatial_aggregator(
           ncFile      = ncFile_path,
           weightsFile = weightsFile_path,
           hrufile     = hrufile_path,
