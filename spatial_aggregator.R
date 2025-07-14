@@ -105,7 +105,7 @@ spatial_aggregator<-function(ncFile,
     for(i in 1:length(spatial_unit))
     {
       w<-weights[weights$spatial_unit==spatial_unit[i],"weight"]
-      id<-weights[weights$spatial_unit==spatial_unit[i],"Cell_#"]+1
+      id<-weights[weights$spatial_unit==spatial_unit[i],"Cell_ID"]+1
       W<-array(NA,dim(var_data)[1:2])
       W[id]<-w
       W<-array(W, dim = c(dim(W), ifelse(length(dim(var_data))>2,dim(var_data)[3],1)))
