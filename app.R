@@ -74,26 +74,26 @@ ui <- fluidPage(
     tags$img(src = "logo.png", width = "100px", style = "border-radius: 20px;"),
     tags$h2("NetCDF Zonal Statistics Calculator", style = "margin: 0;")
   ),
-  verbatimTextOutput("This calculator takes as inputs 1) a NETCDF file with spatial dimensions and 2) a grid weights text file or a shapefile defining your zones of interest.  It outputs a csv file of the variable(s) average within each zone."),
+  verbatimTextOutput("This calculator takes as inputs for the area being processed 1) a NETCDF file with spatial dimensions and 2) a grid cells weight text file or a shapefile defining your zones of interest.  It outputs a csv file of the variable(s) average within each zone."),
   sidebarLayout(
     sidebarPanel(
-      fileInput("ncFile", label_with_help("help_ncFile", "Upload NetCDF File", "NetCDF file (.nc) to aggregate."),
+      # fileInput("ncFile", label_with_help("help_ncFile", "Upload NetCDF File", "NetCDF file (.nc) to remap to user defined zones!"),  # temp
                 accept = ".nc"),
+      textoutput("Choose 1 or 2 below to define zones:"),
+      fileInput("weightsFile", label_with_help("help_weightsFile", "1. Upload Grid Cells Weight File (Optional)", "This file assigns the weights each grid should be assigned in the calculation of the average for each zone. (.txt). This file can be genrated by [shiny app](link) [juli's code](link)"),
+                accept = ".txt"), # temp
       
-      fileInput("weightsFile", label_with_help("help_weightsFile", "Upload Grid Cells Weight File (Optional)", "Optional RDRS grid cells weights file (.txt)."),
-                accept = ".txt"),
-      
-      fileInput("hrufile", label_with_help("help_hrufile", "Upload HRU Shapefile (.zip)", "Shapefile zip containing .shp, .dbf, .shx, etc."),
-                accept = ".zip"),
-      
+      fileInput("hrufile", label_with_help("help_hrufile", "2. Upload HRU Shapefile of the zones of the interest(.zip)", "Shapefile zip containing .shp, .dbf, .shx, etc. (use this if you don't a grid cells weight file)"),
+                accept = ".zip"), # temp
+      # read files outside of the root zip
       hidden(
         div(id = "shapefileInputs",
             selectInput("varnames", label_with_help("help_varnames", "NetCDF Variable Names (lon, lat)", "Select NetCDF variables with spatial dims only."), choices = NULL, multiple = TRUE),
-            selectInput("dimnames", label_with_help("help_dimnames", "NetCDF Dimension Names (lon_dim, lat_dim)", "Select NetCDF dimension names."), choices = NULL, multiple = TRUE),
+            selectInput("dimnames", label_with_help("help_dimnames", "NetCDF Spatial Dimension Names (lon_dim, lat_dim)", "Select NetCDF dimension names."), choices = NULL, multiple = TRUE),
             selectInput("HRU_ID", label_with_help("help_HRU_ID", "HRU ID Field Name", "Select the HRU ID field from the shapefile."), choices = NULL, multiple = FALSE)
         )
       ),
-      actionButton("runButton", "Run Aggregation", icon = icon("play"), class = "btn-primary"),
+      actionButton("runButton", "Calculate Averages", icon = icon("play"), class = "btn-primary"),
       br(),br(),
       uiOutput("download_ui")
     ),
@@ -186,6 +186,8 @@ server <- function(input, output, session) {
       
       append_log(paste("Spatial-only variables detected:", paste(spatial_vars, collapse = ", ")))
       append_log(paste("Dimensions detected:", paste(names(dims), collapse = ", ")))
+      append_log(paste("NetCDF variables to be averaged in each zone:", paste0(names(nc$var),collapse=", "))) # temp
+
     }, silent = TRUE)
   })
   
