@@ -74,6 +74,7 @@ ui <- fluidPage(
     tags$img(src = "logo.png", width = "100px", style = "border-radius: 20px;"),
     tags$h2("NetCDF Zonal Statistics Calculator", style = "margin: 0;")
   ),
+  verbatimTextOutput("This calculator takes as inputs 1) a NETCDF file with spatial dimensions and 2) a grid weights text file or a shapefile defining your zones of interest.  It outputs a csv file of the variable(s) average within each zone."),
   sidebarLayout(
     sidebarPanel(
       fileInput("ncFile", label_with_help("help_ncFile", "Upload NetCDF File", "NetCDF file (.nc) to aggregate."),
