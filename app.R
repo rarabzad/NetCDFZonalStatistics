@@ -13,7 +13,7 @@ library(geosphere)
 library(sp)
 library(lwgeom)
 library(rmapshaper)
-
+# put a warning on time/resources limit would appear on the second line of the log
 label_with_help <- function(id, label_text, help_text) {
   tags$label(
     style = "display: inline-flex; align-items: center;",
