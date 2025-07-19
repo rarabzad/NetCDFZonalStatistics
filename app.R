@@ -45,7 +45,7 @@ ui <- fluidPage(
         clearTimeout(activityTimeout);
         activityTimeout = setTimeout(function() {
           Shiny.setInputValue('inactive', true, {priority: 'event'});
-        }, 60000); // 1 minute = 60000 ms
+        }, 300000); // 1 minute = 300000 ms
       }
     }
     
@@ -72,27 +72,55 @@ ui <- fluidPage(
   tags$div(
     style = "display: flex; align-items: center; gap: 15px; margin-bottom: 20px;",
     tags$img(src = "logo.png", width = "100px", style = "border-radius: 20px;"),
-    tags$h2("NetCDF Zonal Statistics Calculator", style = "margin: 0;")
+    tags$h2("NetCDF Zonal Statistics Calculator", style = "margin: 0;"),
+    tags$p(
+      "This calculator requires two inputs for the area being processed: (1) a NetCDF file with spatial dimensions, and (2) either a grid cell weights text file or a shapefile defining your zones of interest. It outputs a CSV file containing the average value of the selected variable(s) within each zone.",
+      style = "font-size: 1.2em; color: #555;"
+    )
   ),
-  verbatimTextOutput("This calculator takes as inputs for the area being processed 1) a NETCDF file with spatial dimensions and 2) a grid cells weight text file or a shapefile defining your zones of interest.  It outputs a csv file of the variable(s) average within each zone."),
   sidebarLayout(
     sidebarPanel(
-      # fileInput("ncFile", label_with_help("help_ncFile", "Upload NetCDF File", "NetCDF file (.nc) to remap to user defined zones!"),  # temp
-                accept = ".nc"),
-      textoutput("Choose 1 or 2 below to define zones:"),
-      fileInput("weightsFile", label_with_help("help_weightsFile", "1. Upload Grid Cells Weight File (Optional)", "This file assigns the weights each grid should be assigned in the calculation of the average for each zone. (.txt). This file can be genrated by [shiny app](link) [juli's code](link)"),
-                accept = ".txt"), # temp
+      tags$p(
+        "For more information and sample data ",
+        tags$a(href = "https://github.com/rarabzad/NetCDFZonalStatistics",
+               "click here", target = "_blank")
+      ),
       
-      fileInput("hrufile", label_with_help("help_hrufile", "2. Upload HRU Shapefile of the zones of the interest(.zip)", "Shapefile zip containing .shp, .dbf, .shx, etc. (use this if you don't a grid cells weight file)"),
-                accept = ".zip"), # temp
-      # read files outside of the root zip
-      hidden(
-        div(id = "shapefileInputs",
-            selectInput("varnames", label_with_help("help_varnames", "NetCDF Variable Names (lon, lat)", "Select NetCDF variables with spatial dims only."), choices = NULL, multiple = TRUE),
-            selectInput("dimnames", label_with_help("help_dimnames", "NetCDF Spatial Dimension Names (lon_dim, lat_dim)", "Select NetCDF dimension names."), choices = NULL, multiple = TRUE),
-            selectInput("HRU_ID", label_with_help("help_HRU_ID", "HRU ID Field Name", "Select the HRU ID field from the shapefile."), choices = NULL, multiple = FALSE)
+      fileInput("ncFile", label_with_help("help_ncFile", "Upload NetCDF File", "NetCDF file (.nc) to remap to user defined zones!"),
+                accept = ".nc"),
+      # Toggle selector
+      radioButtons("uploadChoice", "Select Input Type:",
+                   choices = c("Grid Cell Weights File" = "weights",
+                               "HRU Shapefile" = "hru"),
+                   inline = TRUE),
+      
+      # Conditionally show fileInputs
+      conditionalPanel(
+        condition = "input.uploadChoice == 'weights'",
+        fileInput("weightsFile", 
+                  label_with_help("help_weightsFile", 
+                                  "1. Upload Grid Cell Weights File (Optional)", 
+                                  HTML("This <code>.txt</code> file assigns weights to each grid cell for calculating the average in each zone. 
+           You can generate this file using 
+           <a href='https://raven-gridweightsgenerator.share.connect.posit.cloud/' target='_blank'>this Shiny app</a> 
+           or 
+           <a href='https://github.com/rarabzad/GridWeightsGenerator/blob/main/grids_weights_generator.R' target='_blank'>this function</a>.")
+                  ),
+                  accept = ".txt"
         )
       ),
+      
+      conditionalPanel(
+        condition = "input.uploadChoice == 'hru'",
+        fileInput("hrufile", 
+                  label_with_help("help_hrufile", 
+                                  "2. Upload HRU Shapefile (.zip)", 
+                                  "Upload a zipped shapefile containing all required files (.shp, .dbf, .shx, etc.). 
+       Use this if you don’t have a grid cell weights file."),
+                  accept = ".zip"
+        )
+      ),
+      uiOutput("varsAndDims"),
       actionButton("runButton", "Calculate Averages", icon = icon("play"), class = "btn-primary"),
       br(),br(),
       uiOutput("download_ui")
@@ -109,7 +137,32 @@ server <- function(input, output, session) {
   shp_dir <- reactiveVal(NULL)
   shp_data <- reactiveVal(NULL)
   shp_path <- reactiveVal(NULL)
+  aggregated_result_val <- reactiveVal(NULL)
   aggregated_csv_path <- reactiveVal(NULL)
+  ncInfo <- reactive({
+    req(input$ncFile)
+    nc <- ncdf4::nc_open(input$ncFile$datapath)
+    on.exit(ncdf4::nc_close(nc), add = TRUE)
+    
+    all_dims <- names(nc$dim)
+    # detect lon/lat dims by name
+    space_dims <- grep("lon|lat", all_dims, ignore.case=TRUE, value=TRUE)
+    # detect time dims by name
+    time_dims  <- grep("time", all_dims, ignore.case=TRUE, value=TRUE)
+    spatial_dims <-all_dims[!(all_dims %in% time_dims)]
+    vars <- names(nc$var)
+    spatial_vars <- vars[sapply(nc$var[vars], function(v) {
+      dn <- sapply(v$dim, `[[`, "name")
+      all(space_dims %in% dn) && !any(time_dims %in% dn)
+    })]
+    
+    list(
+      spatial_dims = spatial_dims,
+      dims         = all_dims,
+      spatial_vars = spatial_vars
+    )
+  })
+  
   
   # Track aggregation status for inactivity timer
   aggregation_active <- reactiveVal(FALSE)
@@ -187,7 +240,7 @@ server <- function(input, output, session) {
       append_log(paste("Spatial-only variables detected:", paste(spatial_vars, collapse = ", ")))
       append_log(paste("Dimensions detected:", paste(names(dims), collapse = ", ")))
       append_log(paste("NetCDF variables to be averaged in each zone:", paste0(names(nc$var),collapse=", "))) # temp
-
+      
     }, silent = TRUE)
   })
   
@@ -226,69 +279,97 @@ server <- function(input, output, session) {
     
     updateSelectInput(session, "HRU_ID", choices = names(shp), selected = names(shp)[1])
   })
-  
-  aggregated_result <- eventReactive(input$runButton, {
-    aggregation_active(TRUE)
-    append_log("Starting aggregation...")
+
+  #––– STEP 2: dynamically render the varnames/dimnames/HRU_ID selects –––
+  output$varsAndDims <- renderUI({
+    # wait until BOTH NetCDF and HRU shapefile are uploaded
+    req(input$ncFile, input$hrufile)
+    
+    # extract NetCDF dims & spatial variables
+    nc <- ncdf4::nc_open(input$ncFile$datapath)
+    on.exit(ncdf4::nc_close(nc), add = TRUE)
+    all_dims <- names(nc$dim)
+    space_dims <- grep("lon|lat", all_dims, ignore.case = TRUE, value = TRUE)
+    time_dims  <- grep("time",   all_dims, ignore.case = TRUE, value = TRUE)
+    spatial_dims <-all_dims[!(all_dims %in% time_dims)]
+    vars       <- names(nc$var)
+    spatial_vars <- vars[sapply(nc$var[vars], function(v) {
+      dn <- sapply(v$dim, `[[`, "name")
+      all(space_dims %in% dn) && !any(time_dims %in% dn)
+    })]
+    
+    tagList(
+      selectInput("varnames",
+                  label_with_help("help_varnames",
+                                  "NetCDF Variable Names (lon, lat)",
+                                  "Select NetCDF variables with spatial dims only."),
+                  choices  = spatial_vars,
+                  selected = NULL,
+                  multiple = TRUE),
+      
+      selectInput("dimnames",
+                  label_with_help("help_dimnames",
+                                  "NetCDF Spatial Dimension Names (lon_dim, lat_dim)",
+                                  "Select NetCDF dimension names."),
+                  choices  = spatial_dims,
+                  selected = head(spatial_dims, 2),
+                  multiple = TRUE),
+      
+      selectInput("HRU_ID",
+                  label_with_help("help_HRU_ID",
+                                  "HRU ID Field Name",
+                                  "Select the HRU ID field from the shapefile."),
+                  choices  = names(shp_data()),
+                  selected = names(shp_data())[1],
+                  multiple = FALSE)
+    )
+  })
+
+    
+  observeEvent(input$runButton, {
     req(input$ncFile)
-    ncFile_path    <- input$ncFile$datapath
-    weightsFile_path <- if (!is.null(input$weightsFile)) input$weightsFile$datapath else NULL
-    hrufile_path   <- shp_path()
     
-    varnames_vec <- NULL
-    dimnames_vec <- NULL
-    HRU_ID_val   <- NULL
-    if (!is.null(hrufile_path)) {
-      varnames_vec <- input$varnames
-      dimnames_vec <- input$dimnames
-      HRU_ID_val   <- input$HRU_ID
-    }
+    aggregation_active(TRUE)    # pause inactivity timeout
+    append_log("Starting aggregation...")
     
-    if (!exists("rdrs_spatial_aggregator")) {
-      append_log("Loading spatial_aggregator function...")
+    # immediately show the progress modal
+    withProgress(message = "Aggregating NetCDF...", value = 0, {
+      incProgress(0.1, detail = "Initializing…")
+      
+      # run the aggregator
       source("https://raw.githubusercontent.com/rarabzad/NetCDFZonalStatistics/refs/heads/main/spatial_aggregator.R")
-      append_log("Function loaded.")
-    }
-    
-    out <- tryCatch({
-      append_log("Running rdrs_spatial_aggregator...")
-      
-      res <- withProgress(message = "Aggregating NetCDF...", value = 0, {
-        incProgress(0.1, detail = "Initializing...")
-        r <- spatial_aggregator(
-          ncFile      = ncFile_path,
-          weightsFile = weightsFile_path,
-          hrufile     = hrufile_path,
-          varnames    = varnames_vec,
-          dimnames    = dimnames_vec,
-          HRU_ID      = HRU_ID_val
-        )
-        incProgress(0.8, detail = "Finalizing...")
-        r
-      })
-      
-      csv_out_path <- file.path(
-        dirname(ncFile_path),
-        paste0(tools::file_path_sans_ext(basename(input$ncFile$name)), "_aggregated.csv")
+      res <- spatial_aggregator(
+        ncFile      = input$ncFile$datapath,
+        weightsFile = if (is.null(input$weightsFile)) NULL else input$weightsFile$datapath,
+        hrufile     = shp_path(),
+        varnames    = input$varnames,
+        dimnames    = input$dimnames,
+        HRU_ID      = input$HRU_ID
       )
-      aggregated_csv_path(csv_out_path)
+      
+      incProgress(0.8, detail = "Finalizing…")
+      Sys.sleep(0.1)  # optional small pause so the “80% → 100%” is visible
+      
+      # write out CSV path
+      csv_out <- file.path(
+        dirname(input$ncFile$datapath),
+        paste0(tools::file_path_sans_ext(input$ncFile$name), "_aggregated.csv")
+      )
+      aggregated_csv_path(csv_out)
       
       append_log("Aggregation done.")
-      append_log(paste("Aggregated file path:", csv_out_path))
+      append_log(paste("Aggregated file path:", csv_out))
       
-      res
-    }, error = function(e) {
-      append_log(paste("Error:", e$message))
-      NULL
+      # store the result
+      aggregated_result_val(res)
     })
     
     aggregation_active(FALSE)
-    out
   }, ignoreNULL = FALSE)
   
   output$dynamicTabs <- renderUI({
-    req(aggregated_result())
-    res        <- aggregated_result()
+    req(aggregated_result_val())
+    res        <- aggregated_result_val()
     dims       <- lapply(res, dim)
     time_vars   <- names(dims)[sapply(dims, function(d) d[1] > 1)]
     static_vars <- names(dims)[sapply(dims, function(d) d[1] == 1)]
@@ -314,8 +395,8 @@ server <- function(input, output, session) {
   })
   
   observe({
-    req(aggregated_result())
-    res   <- aggregated_result()
+    req(aggregated_result_val())
+    res   <- aggregated_result_val()
     dims  <- lapply(res, dim)
     ts_v  <- names(dims)[sapply(dims, function(d) d[1] > 1)]
     
@@ -349,8 +430,8 @@ server <- function(input, output, session) {
   })
   
   observe({
-    req(aggregated_result())
-    res       <- aggregated_result()
+    req(aggregated_result_val())
+    res       <- aggregated_result_val()
     dims      <- lapply(res, dim)
     static_v  <- names(dims)[sapply(dims, function(d) d[1] == 1)]
     
@@ -377,7 +458,7 @@ server <- function(input, output, session) {
     content = function(file) {
       withProgress(message = "Preparing download...", value = 0, {
         incProgress(0.2, detail = "Fetching results...")
-        res_list <- aggregated_result()
+        res_list <- aggregated_result_val()
         req(res_list)
         
         incProgress(0.5, detail = "Combining data...")
@@ -392,7 +473,7 @@ server <- function(input, output, session) {
   )
   
   output$tableAggregated <- renderDT({
-    res <- aggregated_result()
+    res <- aggregated_result_val()
     req(res)
     if (length(res) > 0) {
       head_df <- head(res[[1]])
@@ -403,13 +484,13 @@ server <- function(input, output, session) {
   })
   
   output$rawList <- renderText({
-    res <- aggregated_result()
+    res <- aggregated_result_val()
     if (is.null(res)) return("No result.")
     paste(capture.output(str(res)), collapse = "\n")
   })
   
   output$summaryText <- renderText({
-    res <- aggregated_result()
+    res <- aggregated_result_val()
     if (is.null(res)) return("No result.")
     paste0("Number of variables aggregated: ", length(res), "\n",
            "Dimensions of first variable: ", paste(dim(res[[1]]), collapse = " x "))
