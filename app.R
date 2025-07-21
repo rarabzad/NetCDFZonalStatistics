@@ -239,7 +239,7 @@ server <- function(input, output, session) {
       
       append_log(paste("Spatial-only variables detected:", paste(spatial_vars, collapse = ", ")))
       append_log(paste("Dimensions detected:", paste(names(dims), collapse = ", ")))
-      append_log(paste("NetCDF variables to be averaged in each zone:", paste0(names(nc$var),collapse=", "))) # temp
+      append_log(paste("NetCDF variables to be averaged in each zone:", paste0(vars[!(vars %in% spatial_vars)],collapse=", ")))
       
     }, silent = TRUE)
   })
