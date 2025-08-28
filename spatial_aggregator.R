@@ -82,7 +82,7 @@ spatial_aggregator<-function(ncFile,
     sapply(nc$dim, function(d) {
       !is.null(d$units) && grepl("since", d$units, ignore.case = TRUE)
     })][[1]]
-  time_vals  <- time_dim$vals - 1
+  time_vals  <- time_dim$vals
   time_units <- time_dim$units
   origin_str <- sub(".*since ", "", time_units)
   time_step<-unit_str   <- tolower(trimws(strsplit(time_units, " since ")[[1]][1]))
@@ -131,4 +131,5 @@ spatial_aggregator<-function(ncFile,
   return(data_to_return)
   cat(paste("output file is saved at:",OutFile,"\n"))
 }
+
 
