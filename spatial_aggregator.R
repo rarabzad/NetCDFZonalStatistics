@@ -86,7 +86,7 @@ spatial_aggregator<-function(ncFile,
   time_units <- time_dim$units
   origin_str <- sub(".*since ", "", time_units)
   time_step<-unit_str   <- tolower(trimws(strsplit(time_units, " since ")[[1]][1]))
-  date_time<-origin     <- as.POSIXct(origin_str, tz = "UTC")
+  date_time<-origin     <- ymd_hms(origin_str, tz = "UTC")
   sequence_of_times <- switch(unit_str,
                               "seconds" = origin + seconds(time_vals),
                               "minutes" = origin + minutes(time_vals),
@@ -131,3 +131,4 @@ spatial_aggregator<-function(ncFile,
   return(data_to_return)
   cat(paste("output file is saved at:",OutFile,"\n"))
 }
+
