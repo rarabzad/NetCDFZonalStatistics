@@ -101,7 +101,12 @@ spatial_aggregator<-function(ncFile,
   {
     cat(paste0("(",j,"/",length(vars),")", " #### Aggregating: ",vars[j]," ####\n"))
     mat <- matrix(NA, nrow = if (length(nc$var[[vars[j]]]$dim) > 2) length(sequence_of_times) else 1, ncol = length(spatial_unit))
-    var_data<-t(ncvar_get(nc,vars[j], collapse_degen = F))
+    var_data <- ncvar_get(nc, vars[j], collapse_degen = FALSE)
+    if (length(dim(var_data)) == 2) {
+      var_data <- t(var_data)
+    } else if (length(dim(var_data)) == 3) {
+      var_data <- aperm(var_data, c(2, 1, 3))
+    }    
     for(i in 1:length(spatial_unit))
     {
       w<-weights[weights$spatial_unit==spatial_unit[i],"weight"]
@@ -131,6 +136,7 @@ spatial_aggregator<-function(ncFile,
   return(data_to_return)
   cat(paste("output file is saved at:",OutFile,"\n"))
 }
+
 
 
 
