@@ -9,7 +9,25 @@ for (pkg in required_packages) {
     install.packages(pkg, repos = "https://cloud.r-project.org")
   }
 }
-lapply(required_packages, library, character.only = TRUE)
+library(htmltools)
+library(shiny)
+library(shinyjs)
+library(shinyWidgets)
+library(DT)
+library(lubridate)
+library(sf)
+library(ncdf4)
+library(plotly)
+library(reshape2)
+library(ggplot2)
+library(geosphere)
+library(sp)
+library(lwgeom)
+library(rmapshaper)
+library(raster)
+library(leaflet)
+library(zip)
+library(dplyr)
 
 # put a warning on time/resources limit would appear on the second line of the log
 label_with_help <- function(id, label_text, help_text) {
@@ -496,5 +514,6 @@ server <- function(input, output, session) {
 }
 
 shinyApp(ui, server)
+
 
 
