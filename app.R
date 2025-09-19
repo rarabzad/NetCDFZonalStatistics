@@ -1,18 +1,16 @@
-library(htmltools)
-library(shiny)
-library(shinyjs)
-library(shinyWidgets)
-library(DT)
-library(lubridate)
-library(sf)
-library(ncdf4)
-library(plotly)
-library(reshape2)
-library(ggplot2)
-library(geosphere)
-library(sp)
-library(lwgeom)
-library(rmapshaper)
+required_packages <- c(
+  "htmltools", "shiny", "shinyjs", "shinyWidgets", "DT",
+  "lubridate", "sf", "ncdf4", "plotly", "reshape2",
+  "ggplot2", "geosphere", "sp", "lwgeom", "rmapshaper",
+  "raster", "leaflet", "zip", "dplyr"
+)
+for (pkg in required_packages) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    install.packages(pkg, repos = "https://cloud.r-project.org")
+  }
+}
+lapply(pkgs, library, character.only = TRUE)
+
 # put a warning on time/resources limit would appear on the second line of the log
 label_with_help <- function(id, label_text, help_text) {
   tags$label(
@@ -498,3 +496,4 @@ server <- function(input, output, session) {
 }
 
 shinyApp(ui, server)
+
