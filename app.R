@@ -9,7 +9,7 @@ for (pkg in required_packages) {
     install.packages(pkg, repos = "https://cloud.r-project.org")
   }
 }
-lapply(pkgs, library, character.only = TRUE)
+lapply(required_packages, library, character.only = TRUE)
 
 # put a warning on time/resources limit would appear on the second line of the log
 label_with_help <- function(id, label_text, help_text) {
@@ -496,4 +496,5 @@ server <- function(input, output, session) {
 }
 
 shinyApp(ui, server)
+
 
