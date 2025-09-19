@@ -29,6 +29,7 @@ RUN R -e "install.packages(c( \
     'ggplot2', \
     'geosphere', \
     'sp', \
+    'raster', \
     'lwgeom', \
     'rmapshaper' \
     ), repos='https://cloud.r-project.org/')"
@@ -45,3 +46,4 @@ EXPOSE 3838
 
 # Run app
 CMD ["/usr/bin/shiny-server"]
+
