@@ -1,9 +1,6 @@
-required_packages <- c(
-  "htmltools", "shiny", "shinyjs", "shinyWidgets", "DT",
-  "lubridate", "sf", "ncdf4", "plotly", "reshape2",
-  "ggplot2", "geosphere", "sp", "lwgeom", "rmapshaper",
-  "raster", "leaflet", "zip", "dplyr"
-)
+required_packages <- c("shiny","shinyjs","shinyWidgets","htmltools","DT",
+          "ncdf4","lubridate","sf","geosphere","dplyr",
+          "ggplot2","plotly","reshape2","rmapshaper")
 for (pkg in required_packages) {
   if (!requireNamespace(pkg, quietly = TRUE)) {
     install.packages(pkg, repos = "https://cloud.r-project.org")
@@ -514,6 +511,7 @@ server <- function(input, output, session) {
 }
 
 shinyApp(ui, server)
+
 
 
 
