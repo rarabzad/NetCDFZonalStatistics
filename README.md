@@ -197,4 +197,4 @@ You will be prompted to select:
 For issues, suggestions, or improvements:
 
 * [Open an Issue](https://github.com/rarabzad/NetCDFZonalStatistics)
-* [Live demo](https://raven-netcdf-zonal-statistics.share.connect.posit.cloud)
+* [Live demo](https://raven-netcdfzonalstatistics.share.connect.posit.cloud)
