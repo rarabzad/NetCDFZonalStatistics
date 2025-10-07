@@ -112,7 +112,7 @@ spatial_aggregator<-function(ncFile,
       w<-weights[weights$spatial_unit==spatial_unit[i],"weight"]
       id<-weights[weights$spatial_unit==spatial_unit[i],"Cell_ID"]+1
       W<-array(NA,dim(var_data)[1:2])
-      W[id]<-w
+      W[id]<-t(w)
       W<-array(W, dim = c(dim(W), ifelse(length(dim(var_data))>2,dim(var_data)[3],1)))
       if(dim(W)[3]==1) W<-W[,,1]
       mat[,i]<-
@@ -136,6 +136,7 @@ spatial_aggregator<-function(ncFile,
   return(data_to_return)
   cat(paste("output file is saved at:",OutFile,"\n"))
 }
+
 
 
 
